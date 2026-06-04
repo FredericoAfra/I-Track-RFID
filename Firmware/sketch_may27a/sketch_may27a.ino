@@ -24,10 +24,19 @@ const char* USER_PASSWORD = SECRET_UPASS;
 #define RX2 16
 #define TX2 17
 
+const String PONTO_LEITURA = "armazem";
+
 MFRC522 rfid(SS_PIN, RST_PIN);
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+
+String posicaoParaNome(int posicao) {
+  if (posicao == 1) return "esteira 2";
+  if (posicao == 2) return "esteira 1";
+  if (posicao == 3) return "despache";
+  return "desconhecido";
+}
 
 void setup() {
   Serial.begin(115200); // Serial Monitor do PC
@@ -78,7 +87,7 @@ void loop() {
     int posicaoServo = 3; // Altere para 1, 2 ou 3 para ser o seu padrão de fábrica
     
     // Monta o caminho dinâmico apontando direto para o valor da tag: /tags/VALOR_DA_TAG
-    String caminhoTag = "/tags/" + uidString;
+    String caminhoTag = "/tags/" + uidString + "/servo";
 
     // VERIFICA SE O FIREBASE ESTÁ PRONTO E AUTENTICADO ANTES DE AGIR
     if (Firebase.ready()) {
@@ -104,6 +113,30 @@ void loop() {
         // Agora, se der erro, você saberá o motivo exato
         Serial.println("Não cadastrada ou erro de conexão. Motivo: " + fbdo.errorReason());
         Serial.println("Aplicando posição padrão: " + String(posicaoServo));
+      }
+
+      // Registro da leitura
+      Serial.print("Enviando registro de leitura para o Firebase... ");
+      FirebaseJson jsonLeitura;
+      jsonLeitura.set("tag_id", uidString);
+      jsonLeitura.set("ponto", PONTO_LEITURA);
+      jsonLeitura.set("destino", posicaoParaNome(posicaoServo));
+      jsonLeitura.set("timestamp/.sv", "timestamp");
+      if (Firebase.RTDB.pushJSON(&fbdo, "/scans", &jsonLeitura)) {
+        Serial.println("OK");
+      } else {
+        Serial.println("Falha: " + fbdo.errorReason());
+      }
+
+      // Atualização do nó do asset (tags)
+      Serial.print("Atualizando localizacao do asset no Firebase... ");
+      FirebaseJson jsonUpdate;
+      jsonUpdate.set("posicao", PONTO_LEITURA);
+      jsonUpdate.set("ultima_leitura/.sv", "timestamp");
+      if (Firebase.RTDB.updateNode(&fbdo, "/tags/" + uidString, &jsonUpdate)) {
+        Serial.println("OK");
+      } else {
+        Serial.println("Falha: " + fbdo.errorReason());
       }
     } else {
       Serial.println("ERRO: Firebase não está pronto ou conexão SSL ainda está sendo estabelecida.");

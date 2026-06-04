@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Rastreamento RFID</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: {
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        },
+                        slate: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        },
+                        accent: {
+                            blue: '#0ea5e9', // Electric blue
+                            amber: '#f59e0b', // Amber
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Firebase SDK v8 (compat) via CDN -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Subtle transitions and animations */
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Custom scrollbar for tables */
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+            border-radius: 4px;
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        .nav-link.active {
+            border-bottom-width: 2px;
+            border-color: #0ea5e9;
+            color: #0ea5e9;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- 1. LOGIN SCREEN -->
+    <div id="login-screen" class="fixed inset-0 bg-navy-900 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <div class="flex items-center justify-center mb-6">
+                <span class="text-3xl text-accent-blue mr-2">⚡</span>
+                <h2 class="text-2xl font-bold text-navy-900 border-b-2 border-slate-100 pb-2">RFID Tracking</h2>
+            </div>
+            
+            <div id="login-error" class="hidden bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded mb-6 text-sm text-left"></div>
+            
+            <form id="login-form">
+                <div class="mb-5">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                    <input type="email" id="login-email" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition shadow-sm" required placeholder="admin@empresa.com">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Senha</label>
+                    <input type="password" id="login-password" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition shadow-sm" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="w-full bg-accent-blue hover:bg-sky-600 text-white font-semibold py-2.5 px-4 rounded-lg transition shadow-md flex justify-center items-center">
+                    Entrar no Sistema
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APPLICATION -->
+    <div id="main-app" class="hidden flex-col min-h-screen">
+        
+        <!-- NAVBAR -->
+        <nav class="bg-navy-900 text-white shadow-lg sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center flex-grow">
+                        <div class="flex-shrink-0 flex items-center font-bold text-xl text-accent-blue mr-8">
+                            <span class="mr-2">⚡</span> RFID Tracking
+                        </div>
+                        <div class="hidden md:flex space-x-6 h-full items-end">
+                            <button onclick="navigate('dashboard')" id="nav-dashboard" class="nav-link active pb-4 pt-5 px-1 text-sm font-medium text-slate-300 hover:text-white transition">Dashboard</button>
+                            <button onclick="navigate('tags')" id="nav-tags" class="nav-link pb-4 pt-5 px-1 text-sm font-medium text-slate-300 hover:text-white transition">Gerenciamento de Tags</button>
+                            <button onclick="navigate('pontos')" id="nav-pontos" class="nav-link pb-4 pt-5 px-1 text-sm font-medium text-slate-300 hover:text-white transition">Pontos de Leitura</button>
+                            <button onclick="navigate('historico')" id="nav-historico" class="nav-link pb-4 pt-5 px-1 text-sm font-medium text-slate-300 hover:text-white transition">Histórico de Tag</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <span id="user-email-display" class="mr-4 text-sm font-medium text-slate-400 hidden sm:block"></span>
+                        <button id="btn-logout" class="bg-navy-700 hover:bg-red-600 text-white text-sm py-1.5 px-4 rounded-md transition border border-navy-700 hover:border-red-600 shadow-sm">Sair</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Mobile Menu -->
+            <div class="md:hidden overflow-x-auto whitespace-nowrap bg-navy-800 px-4 py-3 flex space-x-6 shadow-inner table-container">
+                <button onclick="navigate('dashboard')" class="text-sm font-medium text-slate-300 hover:text-white pb-1 border-b-2 border-transparent">Dashboard</button>
+                <button onclick="navigate('tags')" class="text-sm font-medium text-slate-300 hover:text-white pb-1 border-b-2 border-transparent">Tags</button>
+                <button onclick="navigate('pontos')" class="text-sm font-medium text-slate-300 hover:text-white pb-1 border-b-2 border-transparent">Pontos</button>
+                <button onclick="navigate('historico')" class="text-sm font-medium text-slate-300 hover:text-white pb-1 border-b-2 border-transparent">Histórico</button>
+            </div>
+        </nav>
+
+        <!-- CONTENT AREA -->
+        <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+            
+            <!-- SECTION 1: DASHBOARD -->
+            <div id="section-dashboard" class="section fade-in block">
+                <div class="flex items-center mb-6">
+                    <h1 class="text-2xl font-bold text-navy-800 border-l-4 border-accent-blue pl-3 py-1">Visão Geral</h1>
+                </div>
+                
+                <!-- SUMMARY CARDS -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-16 h-16 bg-blue-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                        <div class="relative z-10">
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total de Leituras</p>
+                            <p id="card-total-leituras" class="text-3xl font-bold text-navy-900 mt-2">0</p>
+                        </div>
+                        <div class="absolute bottom-0 left-0 w-full h-1 bg-accent-blue"></div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-16 h-16 bg-amber-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                        <div class="relative z-10">
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ativos no Armazém</p>
+                            <p id="card-ativos-armazem" class="text-3xl font-bold text-navy-900 mt-2">0</p>
+                        </div>
+                        <div class="absolute bottom-0 left-0 w-full h-1 bg-accent-amber"></div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-16 h-16 bg-emerald-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                        <div class="relative z-10">
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pontos Ativos</p>
+                            <p id="card-pontos-ativos" class="text-3xl font-bold text-navy-900 mt-2">0</p>
+                        </div>
+                        <div class="absolute bottom-0 left-0 w-full h-1 bg-emerald-500"></div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-16 h-16 bg-purple-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                        <div class="relative z-10">
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Última Leitura</p>
+                            <p id="card-ultima-leitura" class="text-base font-bold text-navy-900 mt-3 truncate">--</p>
+                        </div>
+                        <div class="absolute bottom-0 left-0 w-full h-1 bg-purple-500"></div>
+                    </div>
+                </div>
+
+                <!-- CHARTS -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-navy-800 mb-6 flex items-center">
+                            <span class="w-2 h-2 rounded-full bg-accent-amber mr-2"></span>
+                            Inventário do Armazém
+                        </h3>
+                        <div class="h-64 relative w-full">
+                            <canvas id="chart-inventario"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-navy-800 mb-6 flex items-center">
+                            <span class="w-2 h-2 rounded-full bg-accent-blue mr-2"></span>
+                            Leituras por Ponto
+                        </h3>
+                        <div class="h-64 relative w-full">
+                            <canvas id="chart-leituras"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: GERENCIAMENTO DE TAGS -->
+            <div id="section-tags" class="section fade-in hidden">
+                <div class="flex items-center mb-6">
+                    <h1 class="text-2xl font-bold text-navy-800 border-l-4 border-accent-blue pl-3 py-1">Gerenciamento de Tags</h1>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-8 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <h3 class="font-semibold text-navy-800">Catálogo de Ativos</h3>
+                        <span class="text-xs font-bold bg-accent-blue text-white py-1 px-3 rounded-full shadow-sm" id="tags-count">0</span>
+                    </div>
+                    <div class="overflow-x-auto table-container">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">UID</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Nome</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Categoria</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Posição Atual</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Última Leitura</th>
+                                    <th class="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-tags-body" class="bg-white divide-y divide-slate-100">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ADD TAG FORM -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 border-t-4 border-t-accent-blue">
+                    <h3 class="text-lg font-semibold text-navy-800 mb-5">Cadastrar Nova Tag</h3>
+                    <form id="form-add-tag" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">UID (Chave)</label>
+                            <input type="text" id="tag-uid" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition" required placeholder="Ex: E24B5C11">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Nome do Ativo</label>
+                            <input type="text" id="tag-nome" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition" required placeholder="Ex: Palete Padrão">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Categoria</label>
+                            <input type="text" id="tag-categoria" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition" required placeholder="Ex: Contentor">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Destino Padrão (Servo)</label>
+                            <select id="tag-destino" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition bg-white" required>
+                                <option value="1">Esteira 2</option>
+                                <option value="2">Esteira 1</option>
+                                <option value="3">Despache</option>
+                            </select>
+                        </div>
+                        <div class="lg:col-span-4 flex justify-end mt-2">
+                            <button type="submit" class="bg-accent-blue hover:bg-sky-600 text-white font-semibold py-2.5 px-6 rounded-lg transition shadow-sm flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                Salvar Tag
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- SECTION 3: PONTOS DE LEITURA -->
+            <div id="section-pontos" class="section fade-in hidden">
+                <div class="flex items-center mb-6">
+                    <h1 class="text-2xl font-bold text-navy-800 border-l-4 border-emerald-500 pl-3 py-1">Pontos de Leitura</h1>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-8 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                        <h3 class="font-semibold text-navy-800">Sensores de Rastreamento</h3>
+                    </div>
+                    <div class="overflow-x-auto table-container">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Nome (ID)</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Descrição</th>
+                                    <th class="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Tags no Local</th>
+                                    <th class="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-pontos-body" class="bg-white divide-y divide-slate-100">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ADD PONTO FORM -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 border-t-4 border-t-emerald-500 max-w-2xl">
+                    <h3 class="text-lg font-semibold text-navy-800 mb-5">Cadastrar Ponto</h3>
+                    <form id="form-add-ponto" class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Identificador do Ponto (Chave)</label>
+                            <input type="text" id="ponto-nome" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" required placeholder="Ex: setor_a (minúsculas, sem espaços)" pattern="[a-z0-9_]+" title="Apenas letras minúsculas, números e underline.">
+                            <p class="text-xs text-slate-500 mt-1.5 flex items-center">
+                                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Identificador exato utilizado pelos módulos ESP32.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Descrição</label>
+                            <input type="text" id="ponto-descricao" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" required placeholder="Ex: Esteira principal do Setor A">
+                        </div>
+                        <div class="flex justify-end pt-2">
+                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-6 rounded-lg transition shadow-sm flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                Salvar Ponto
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- SECTION 4: HISTÓRICO DE TAG -->
+            <div id="section-historico" class="section fade-in hidden">
+                <div class="flex items-center mb-6">
+                    <h1 class="text-2xl font-bold text-navy-800 border-l-4 border-accent-blue pl-3 py-1">Histórico de Rastreamento</h1>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+                    <h3 class="text-lg font-semibold text-navy-800 mb-4">Filtrar por Ativo</h3>
+                    <div class="flex flex-col sm:flex-row gap-4 items-end">
+                        <div class="flex-grow w-full">
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Selecione a Tag</label>
+                            <select id="historico-tag-select" class="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-accent-blue focus:border-accent-blue outline-none transition bg-white">
+                                <option value="">Carregando tags...</option>
+                            </select>
+                        </div>
+                        <button id="btn-buscar-historico" class="bg-navy-800 hover:bg-navy-700 text-white font-semibold py-2.5 px-8 rounded-lg transition shadow-sm w-full sm:w-auto flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            Buscar
+                        </button>
+                    </div>
+                </div>
+
+                <div id="historico-results-container" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hidden">
+                    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <h3 class="font-semibold text-navy-800">Linha do Tempo de Movimentação</h3>
+                        <span id="historico-count" class="text-xs font-semibold bg-slate-200 text-slate-700 py-1 px-3 rounded-full"></span>
+                    </div>
+                    <div class="overflow-x-auto table-container">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Data/Hora (pt-BR)</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Ponto de Leitura</th>
+                                    <th class="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Ação de Roteamento (Servo)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-historico-body" class="bg-white divide-y divide-slate-100">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                        <div id="historico-empty" class="hidden p-10 text-center text-slate-500 flex flex-col items-center">
+                            <svg class="w-12 h-12 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            <p>Nenhum registro de movimentação encontrado para esta tag.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // --- 1. FIREBASE CONFIGURATION ---
+        // REPLACE WITH REAL FIREBASE CONFIGURATION
+        const firebaseConfig = {
+            apiKey: "AIzaSyBrdxac00T8tjHkWR8Q_mzrzTYD6czligg",
+            authDomain: "led-teste-8b85c.firebaseapp.com",
+            databaseURL: "https://led-teste-8b85c-default-rtdb.firebaseio.com",
+            projectId: "led-teste-8b85c"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.database();
+
+        // --- GLOBAL STATE ---
+        let currentTags = {};
+        let currentScans = {};
+        let currentPontos = {};
+        let inventarioInicial = 0;
+        let chartAInstance = null;
+        let chartBInstance = null;
+
+        // --- 2. AUTHENTICATION & INITIALIZATION ---
+        auth.onAuthStateChanged((user) => {
+            const loginScreen = document.getElementById('login-screen');
+            const mainApp = document.getElementById('main-app');
+            const userEmailDisplay = document.getElementById('user-email-display');
+
+            if (user) {
+                // Logged In
+                loginScreen.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                mainApp.classList.add('flex');
+                userEmailDisplay.textContent = user.email;
+                
+                // Initialize Data Listeners
+                initDatabaseListeners();
+            } else {
+                // Not Logged In
+                loginScreen.classList.remove('hidden');
+                mainApp.classList.add('hidden');
+                mainApp.classList.remove('flex');
+                
+                // Disconnect database listeners to secure data access
+                db.ref().off();
+            }
+        });
+
+        // Login Handler
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            
+            // Show loading state (optional UX improvement)
+            const btn = e.target.querySelector('button');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Autenticando...';
+            btn.disabled = true;
+            
+            auth.signInWithEmailAndPassword(email, password)
+                .then(() => {
+                    errorDiv.classList.add('hidden');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                })
+                .catch((error) => {
+                    errorDiv.textContent = `Erro de Autenticação: ${error.message}`;
+                    errorDiv.classList.remove('hidden');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+        });
+
+        // Logout Handler
+        document.getElementById('btn-logout').addEventListener('click', () => {
+            auth.signOut();
+        });
+
+        // --- 3. NAVIGATION ---
+        function navigate(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(el => {
+                el.classList.add('hidden');
+                el.classList.remove('block');
+            });
+            
+            // Show target section
+            const target = document.getElementById(`section-${sectionId}`);
+            if (target) {
+                target.classList.remove('hidden');
+                target.classList.add('block');
+            }
+            
+            // Update active nav link style
+            document.querySelectorAll('.nav-link').forEach(el => {
+                el.classList.remove('active', 'border-accent-blue', 'text-white');
+                el.classList.add('text-slate-300', 'border-transparent');
+            });
+            
+            const activeNav = document.getElementById(`nav-${sectionId}`);
+            if(activeNav) {
+                activeNav.classList.remove('text-slate-300', 'border-transparent');
+                activeNav.classList.add('active', 'border-accent-blue', 'text-white');
+            }
+        }
+
+        // --- 4. UTILS ---
+        function formatDateTime(ms) {
+            if (!ms) return '<span class="text-slate-400 italic">Sem registro</span>';
+            const date = new Date(ms);
+            return date.toLocaleString('pt-BR', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+        
+        function formatServo(servoId) {
+            const map = {
+                1: 'Esteira 2',
+                2: 'Esteira 1',
+                3: 'Despache'
+            };
+            return map[servoId] || servoId;
+        }
+
+        // --- 5. DATABASE LISTENERS & UI UPDATES ---
+        function initDatabaseListeners() {
+            if (!auth.currentUser) return; // Extra check
+
+            // Listen to Config
+            db.ref('/config/inventario_inicial').on('value', (snap) => {
+                inventarioInicial = snap.val() || 0;
+                updateDashboardCharts();
+            });
+
+            // Listen to Pontos
+            db.ref('/pontos_leitura').on('value', (snap) => {
+                currentPontos = snap.val() || {};
+                renderPontosTable();
+                updateDashboardCards();
+                updateDashboardCharts();
+            });
+
+            // Listen to Tags
+            db.ref('/tags').on('value', (snap) => {
+                currentTags = snap.val() || {};
+                renderTagsTable();
+                renderPontosTable(); // Re-render to update "Tags no Local" counts
+                updateHistoricoSelect();
+                updateDashboardCards();
+                updateDashboardCharts();
+            });
+
+            // Listen to Scans
+            db.ref('/scans').on('value', (snap) => {
+                currentScans = snap.val() || {};
+                updateDashboardCards();
+                updateDashboardCharts();
+            });
+        }
+
+        // --- DASHBOARD UPDATES ---
+        function updateDashboardCards() {
+            // Total Leituras
+            const scansKeys = Object.keys(currentScans);
+            document.getElementById('card-total-leituras').textContent = scansKeys.length;
+
+            // Ativos no Armazém
+            let ativosArmazem = 0;
+            for (let uid in currentTags) {
+                if (currentTags[uid].posicao === 'armazem') ativosArmazem++;
+            }
+            document.getElementById('card-ativos-armazem').textContent = ativosArmazem;
+
+            // Pontos Ativos
+            document.getElementById('card-pontos-ativos').textContent = Object.keys(currentPontos).length;
+
+            // Última Leitura
+            let maxTime = 0;
+            for (let key in currentScans) {
+                if (currentScans[key].timestamp > maxTime) {
+                    maxTime = currentScans[key].timestamp;
+                }
+            }
+            document.getElementById('card-ultima-leitura').innerHTML = maxTime ? formatDateTime(maxTime) : '<span class="text-slate-400 font-normal">Sem registros</span>';
+        }
+
+        function updateDashboardCharts() {
+            // Setup general Chart.js defaults for aesthetics
+            Chart.defaults.font.family = "'Inter', sans-serif";
+            Chart.defaults.color = '#64748b';
+
+            // Chart A: Inventário do Armazém
+            let ativosArmazem = 0;
+            for (let uid in currentTags) {
+                if (currentTags[uid].posicao === 'armazem') ativosArmazem++;
+            }
+            
+            const ctxA = document.getElementById('chart-inventario').getContext('2d');
+            if (chartAInstance) chartAInstance.destroy();
+            
+            chartAInstance = new Chart(ctxA, {
+                type: 'bar',
+                data: {
+                    labels: ['Inicial (Previsto)', 'Atual (Físico)'],
+                    datasets: [{
+                        label: 'Quantidade',
+                        data: [inventarioInicial, ativosArmazem],
+                        backgroundColor: ['#94a3b8', '#f59e0b'],
+                        borderRadius: 6,
+                        barThickness: 50
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: true, 
+                            ticks: { precision: 0 },
+                            grid: { color: '#f1f5f9' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            padding: 12,
+                            titleFont: { size: 14 },
+                            bodyFont: { size: 14, weight: 'bold' }
+                        }
+                    }
+                }
+            });
+
+            // Chart B: Leituras por Ponto
+            const countsPorPonto = {};
+            for (let key in currentScans) {
+                const p = currentScans[key].ponto;
+                if (p) {
+                    countsPorPonto[p] = (countsPorPonto[p] || 0) + 1;
+                }
+            }
+            
+            const labelsB = Object.keys(countsPorPonto);
+            const dataB = Object.values(countsPorPonto);
+
+            const ctxB = document.getElementById('chart-leituras').getContext('2d');
+            if (chartBInstance) chartBInstance.destroy();
+            
+            chartBInstance = new Chart(ctxB, {
+                type: 'bar',
+                data: {
+                    labels: labelsB.length ? labelsB : ['Sem dados'],
+                    datasets: [{
+                        label: 'Qtd de Leituras',
+                        data: dataB.length ? dataB : [0],
+                        backgroundColor: '#0ea5e9',
+                        borderRadius: 6,
+                        maxBarThickness: 50
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: true, 
+                            ticks: { precision: 0 },
+                            grid: { color: '#f1f5f9' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            padding: 12,
+                            titleFont: { size: 14 },
+                            bodyFont: { size: 14, weight: 'bold' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- TAGS MANAGEMENT ---
+        function renderTagsTable() {
+            const tbody = document.getElementById('table-tags-body');
+            tbody.innerHTML = '';
+            let count = 0;
+
+            for (let uid in currentTags) {
+                count++;
+                const tag = currentTags[uid];
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 transition duration-150 ease-in-out';
+                
+                // Aesthetic styling for position
+                let posBadgeClass = 'bg-slate-100 text-slate-700';
+                if (tag.posicao === 'armazem') posBadgeClass = 'bg-amber-100 text-amber-800';
+                else if (tag.posicao === 'cadastrado') posBadgeClass = 'bg-purple-100 text-purple-800';
+                else if (tag.posicao) posBadgeClass = 'bg-blue-100 text-blue-800';
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-navy-900">${uid}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">${tag.nome || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${tag.categoria || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2.5 py-1 inline-flex text-xs font-bold rounded-md ${posBadgeClass}">
+                            ${tag.posicao || '-'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">${formatDateTime(tag.ultima_leitura)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <button onclick="deleteTag('${uid}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition" title="Excluir Ativo">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+            
+            document.getElementById('tags-count').textContent = count;
+            
+            if(count === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500 italic">Nenhum ativo cadastrado.</td></tr>';
+            }
+        }
+
+        document.getElementById('form-add-tag').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!auth.currentUser) return;
+
+            const uid = document.getElementById('tag-uid').value.trim();
+            const nome = document.getElementById('tag-nome').value.trim();
+            const categoria = document.getElementById('tag-categoria').value.trim();
+            const destino = parseInt(document.getElementById('tag-destino').value);
+
+            db.ref(`/tags/${uid}`).set({
+                nome: nome,
+                categoria: categoria,
+                servo: destino,
+                posicao: 'cadastrado',
+                ultima_leitura: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                document.getElementById('form-add-tag').reset();
+            }).catch(error => {
+                alert("Erro ao adicionar tag: " + error.message);
+            });
+        });
+
+        window.deleteTag = function(uid) {
+            if (!auth.currentUser) return;
+            if (confirm(`Aviso de Segurança: Tem certeza que deseja remover permanentemente o ativo [ ${uid} ] do sistema?`)) {
+                db.ref(`/tags/${uid}`).remove().catch(err => alert(err.message));
+            }
+        };
+
+        // --- PONTOS MANAGEMENT ---
+        function renderPontosTable() {
+            const tbody = document.getElementById('table-pontos-body');
+            tbody.innerHTML = '';
+            
+            const tagsPerPoint = {};
+            for(let uid in currentTags) {
+                const pos = currentTags[uid].posicao;
+                if(pos) {
+                    tagsPerPoint[pos] = (tagsPerPoint[pos] || 0) + 1;
+                }
+            }
+
+            let count = 0;
+            for (let nome in currentPontos) {
+                count++;
+                const ponto = currentPontos[nome];
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 transition duration-150 ease-in-out';
+                const qtdTags = tagsPerPoint[nome] || 0;
+                
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-navy-900">${nome}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${ponto.descricao || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <span class="px-3 py-1 inline-flex text-xs font-bold rounded-md ${qtdTags > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}">
+                            ${qtdTags}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <button onclick="deletePonto('${nome}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition" title="Excluir Ponto">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+            
+            if(count === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500 italic">Nenhum ponto de leitura configurado.</td></tr>';
+            }
+        }
+
+        document.getElementById('form-add-ponto').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!auth.currentUser) return;
+
+            const nome = document.getElementById('ponto-nome').value.trim().toLowerCase();
+            const descricao = document.getElementById('ponto-descricao').value.trim();
+
+            db.ref(`/pontos_leitura/${nome}`).set({
+                descricao: descricao
+            }).then(() => {
+                document.getElementById('form-add-ponto').reset();
+            }).catch(error => {
+                alert("Erro ao adicionar ponto de leitura: " + error.message);
+            });
+        });
+
+        window.deletePonto = function(nome) {
+            if (!auth.currentUser) return;
+            if (confirm(`Tem certeza que deseja remover o ponto de leitura [ ${nome} ]?`)) {
+                db.ref(`/pontos_leitura/${nome}`).remove().catch(err => alert(err.message));
+            }
+        };
+
+        // --- HISTÓRICO DE TAG ---
+        function updateHistoricoSelect() {
+            const select = document.getElementById('historico-tag-select');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Selecione uma Tag --</option>';
+            
+            const tagsArray = [];
+            for(let uid in currentTags) {
+                tagsArray.push({ uid, nome: currentTags[uid].nome || 'Sem Nome' });
+            }
+            
+            tagsArray.sort((a,b) => a.nome.localeCompare(b.nome));
+
+            tagsArray.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.uid;
+                opt.textContent = `${t.nome} (ID: ${t.uid})`;
+                select.appendChild(opt);
+            });
+            
+            if(currentTags[currentVal]) {
+                select.value = currentVal;
+            }
+        }
+
+        document.getElementById('btn-buscar-historico').addEventListener('click', () => {
+            if (!auth.currentUser) return;
+            
+            const selectedUID = document.getElementById('historico-tag-select').value;
+            if (!selectedUID) {
+                alert("Por favor, selecione uma tag no menu suspenso.");
+                return;
+            }
+
+            const container = document.getElementById('historico-results-container');
+            const tbody = document.getElementById('table-historico-body');
+            const emptyMsg = document.getElementById('historico-empty');
+            const countBadge = document.getElementById('historico-count');
+            
+            container.classList.remove('hidden');
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center py-8 text-slate-500 flex justify-center items-center"><svg class="animate-spin h-5 w-5 mr-3 text-accent-blue" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Buscando dados...</td></tr>';
+            emptyMsg.classList.add('hidden');
+            countBadge.textContent = '...';
+
+            db.ref("/scans").orderByChild("tag_id").equalTo(selectedUID).once('value')
+            .then(snapshot => {
+                const data = snapshot.val();
+                tbody.innerHTML = '';
+                
+                if (!data) {
+                    emptyMsg.classList.remove('hidden');
+                    countBadge.textContent = '0 registros';
+                    return;
+                }
+
+                const leiturasArray = [];
+                for(let key in data) {
+                    leiturasArray.push(data[key]);
+                }
+
+                // Sort descending (newest first)
+                leiturasArray.sort((a, b) => b.timestamp - a.timestamp);
+
+                countBadge.textContent = `${leiturasArray.length} registro(s)`;
+
+                leiturasArray.forEach((leitura, index) => {
+                    const tr = document.createElement('tr');
+                    tr.className = index === 0 ? 'bg-sky-50' : 'hover:bg-slate-50 transition'; // Highlight newest record
+                    
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-700">
+                            ${index === 0 ? '<span class="inline-block w-2 h-2 rounded-full bg-accent-blue mr-2"></span>' : '<span class="inline-block w-2 h-2 rounded-full bg-transparent mr-2"></span>'}
+                            ${formatDateTime(leitura.timestamp)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-navy-800">${leitura.ponto || '-'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md text-xs font-semibold border border-slate-200 shadow-sm">
+                                ${leitura.destino || '-'}
+                            </span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                alert("Falha de conexão ao buscar histórico: " + err.message);
+                tbody.innerHTML = '';
+            });
+        });
+
+    </script>
+</body>
+</html>
