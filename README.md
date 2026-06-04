@@ -1,108 +1,33 @@
-<h1 align="center">
-  🏭 IRFIDT
-</h1>
+# Industrial Track System with RFID (I-Track RFID)
 
-<p align="center">
-  <strong>Tracking and management system for materials and products in an industrial environment using RFID tags.</strong>
-</p>
+## Overview
+An academic IoT prototype to monitor industrial asset movement in specifc points. It uses RFID readers (ESP32) distributed as checkpoints that autonomously update a centralized Firebase database, feeding a live web dashboard.
 
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white"/>
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat&logo=fastapi&logoColor=white"/>
-  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white"/>
-  <img alt="ESP32" src="https://img.shields.io/badge/ESP32-RFID-E7352C?style=flat"/>
-  <img alt="Status" src="https://img.shields.io/badge/status-em%20desenvolvimento-yellow?style=flat"/>
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat"/>
-</p>
+## Architecture
+`RFID Tags` ➡️ `ESP32 + RC522` ➡️ `Firebase RTDB` ➡️ `Web Dashboard`
+*(The ESP32 also sends physical routing commands to an Arduino Uno).*
 
----
+## Hardware Components
+* **ESP32:** Main controller. Reads RFID, connects to Wi-Fi/Firebase, and sends actuator commands.
+* **RC522:** 13.56 MHz RFID reader module.
+* **Arduino Uno:** Controls the physical actuator (e.g., a servo motor for conveyor switching).
+* **RFID Tags:** Passive tags representing trackable assets.
 
-## 📋 Summary
+## Firmware & Database
+* **ESP32 Firmware (C++):** Authenticates via Firebase Auth, reads the tag UID, logs the reading with a Firebase server timestamp (generating a unique push ID), updates the asset's current location, and triggers the Arduino.
+* **Firebase Realtime Database:**
+  * `/rfid/ultima_tag`: Quick reference for the last read tag.
+  * `/tags/{uid}`: Asset details (name, category, destination, current location).
+  * `/leituras/{push_key}`: Historical log of all checkpoint readings.
+* **Security:** ESP32 writing is authenticated; Firebase Security Rules reject invalid checkpoint locations.
 
-- [About the project](#-about-the-project)
-- [System Architeture](#-system-architeture)
-- [Technology](#-system-architeture)
-- [Arquitetura de Pastas](#-folder-structure)
+## Web Frontend (Planned)
+A read-only, build-free dashboard using HTML, Tailwind CSS, Alpine.js, and Firebase JS SDK. It displays a live asset table and a history log of recent readings.
 
----
+## Demo Limitations
+* Single checkpoint simulated (prototype scale).
+* Firebase Auth token expires in 1 hour (requires ESP32 reboot).
+* Unregistered tags default to the "dispatch" location.
 
-## 📖 About the project
-
-A system developed to track and manage the movement of materials and products within an industry. Each item is identified by an **RFID tag**, read by **RC522** sensors connected to **ESP32** microcontrollers installed at strategic points in the factory (entrances, exits, sectors, warehouse, etc.).
-
-When a tag is read, the ESP32 sends the data to a **REST API** (FastAPI), which registers and updates the information in the database. A **web panel** consumes this same API to allow data management and the visualization of dashboards with movement analyses.
-
-### How it works
-
-```
-[RFID tag]
-    │
-    ▼
-[Sensor RC522 + ESP32]  ──→  [API FastAPI]  ──→  [SQLite Database]
-    (point in factory)              │
-                                    ▼
-                                [Web page]
-                         (dashboards + management)
-```
-
-### ✨ Preview Features
-
-- [x] Database with tags tracking
-- [ ] API REST for RFID read registers
-- [ ] Web panel and management
-- [ ] Dashboards and movement analysis
-- [ ] Esp32 scripts
-- [ ] Authentication and acess control
-
----
-
-## 🏗 System Architeture
-
-The project is a **monorepo** divided into two main parts — backend (under development) and frontend (pending):
-
-| Layer | Technology | Status |
-|---|---|---|
-| Hardware | ESP32 + Sensor RC522 | ✅ Hardware defined |
-| Backend / API | Python + FastAPI | 🔄 In development |
-| Banco de Dados | SQLite | 🔄 In Development |
-| Frontend / Painel | To set | ⏳ Pending |
-
----
-
-## 🛠 Technology
-
-| Component | Technology |
-|---|---|
-| Language | Python 3.11+ |
-| Framework API | FastAPI |
-| Database | SQLite |
-| ORM / Queries | SQLAlchemy / aiosqlite |
-| Data validation | Pydantic |
-| Microcontroler | ESP32 |
-| RFID sensor | RC522 |
-| Comunication ESP32 → API | `⚠️ To set` |
-| Frontend | `⚠️ To setr` |
-
-
----
-
-## 📁 Folder structure
-
-> The structure below reflects the current state of the project (backend) and the planned structure for the frontend.
-
-```
-IRFIDT/
-│
-├── Database/                       # database schema
-|
-├── frontend/                       # ⏳ Web panel
-│
-├── Firmware/                       # ⏳ Esp32 script
-│                  
-└── README.md
-```
----
-
-<p align="center">
-  Made by <a href="https://github.com/FredericoAfra">Frederico</a>
-</p>
+## License
+Distributed under the MIT License.
