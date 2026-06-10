@@ -31,7 +31,7 @@ const char* USER_PASSWORD = SECRET_UPASS;
 #define RX2 16
 #define TX2 17
 
-const String SCAN_POINT = "warehouse";
+const String SCAN_POINT = "armazem";
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 FirebaseData fbdo;
